@@ -1,0 +1,58 @@
+# dependencies
+node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+
+# Native
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Metro
+.metro-health-check*
+
+# debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# macOS
+.DS_Store
+
+# local env files
+.env
+.env*.local
+expo-env.d.ts
+
+# typescript
+*.tsbuildinfo
+
+# Prebuild
+android/
+ios/
+
+# dev stuff
+.vscode/
+.idea
+
+#Local Builds
+*.ipa
+*.apk
+*.aab
+build-*.tar.gz
+
+# typescript
+*.tsbuildinfo
+
+# others
+./*.crt
+./*.key
+*.pem
+coverage
+*.lcov
