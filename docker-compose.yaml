@@ -60,23 +60,22 @@ services:
     
     # Environment configuration
     environment:
-      MCP_MODE: ${MCP_MODE:-http}
-      AUTH_TOKEN: test-token # Change this to a secure token in production
-      
-      NODE_ENV: ${NODE_ENV:-production}
-      LOG_LEVEL: ${LOG_LEVEL:-info}
-      PORT: ${PORT:-3000}
-      NODE_DB_PATH: ${NODE_DB_PATH:-/app/data/nodes.db}
-      REBUILD_ON_START: ${REBUILD_ON_START:-false}
-
-      # Telemetry: Anonymous usage statistics are ENABLED by default
+      - MCP_MODE=${MCP_MODE:-http}
+      - AUTH_TOKEN=${N8N_MCP_AUTH_TOKEN:-changeme}
+      - NODE_ENV=${NODE_ENV:-production}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - PORT=${PORT:-3000}
+      - NODE_DB_PATH=${NODE_DB_PATH:-/app/data/nodes.db}
+      - REBUILD_ON_START=${REBUILD_ON_START:-false}
+      - N8N_SECURE_COOKIE=${N8N_SECURE_COOKIE:-true}
+      # Telemetry=Anonymous usage statistics are ENABLED by default
       # To opt-out, uncomment and set to 'true':
-      N8N_MCP_TELEMETRY_DISABLED: ${N8N_MCP_TELEMETRY_DISABLED:-true}
-
+      - N8N_MCP_TELEMETRY_DISABLED=${N8N_MCP_TELEMETRY_DISABLED:-true}
+      - N8N_API_URL=http://${SUBDOMAIN}.${DOMAIN_NAME}:5678/
+      - N8N_API_KEY=${N8N_API_KEY}
       # Optional: n8n API configuration (enables 16 additional management tools)
       # Uncomment and configure to enable n8n workflow management
       # N8N_API_URL: ${N8N_API_URL}
-      # N8N_API_KEY: ${N8N_API_KEY}
       # N8N_API_TIMEOUT: ${N8N_API_TIMEOUT:-30000}
       # N8N_API_MAX_RETRIES: ${N8N_API_MAX_RETRIES:-3}
     

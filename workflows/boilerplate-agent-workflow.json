@@ -1,0 +1,312 @@
+{
+  "name": "Boilerplate Agent - Plan Generator",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "best-practices",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [
+        250,
+        300
+      ],
+      "webhookId": "best-practices"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse incoming webhook payload\nconst payload = $input.item.json.body;\n\n// Extract metadata from the request\nconst platform = payload.platform || 'backend'; // backend, frontend, mobile\nconst type = payload.type || 'feature'; // feature, scaffolding, bug\nconst description = payload.description || '';\nconst title = payload.title || 'Untitled Request';\n\n// Validate platform\nconst validPlatforms = ['backend', 'frontend', 'mobile'];\nif (!validPlatforms.includes(platform)) {\n  throw new Error(`Invalid platform: ${platform}. Must be one of: ${validPlatforms.join(', ')}`);\n}\n\n// Construct AGENTS.md file path\nconst agentsPath = `boilerplate/${platform}/AGENTS.md`;\n\nreturn {\n  platform,\n  type,\n  description,\n  title,\n  agentsPath,\n  repository: 'marcostomatti/n8n-workflows',\n  branch: 'main'\n};"
+      },
+      "id": "parse-request",
+      "name": "Parse Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        450,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "githubApi",
+        "url": "=https://api.github.com/repos/{{ $json.repository }}/contents/{{ $json.agentsPath }}",
+        "options": {
+          "queryParameters": {
+            "parameters": [
+              {
+                "name": "ref",
+                "value": "={{ $json.branch }}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "fetch-agents-md",
+      "name": "Fetch AGENTS.md from GitHub",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        650,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Decode base64 content from GitHub API\nconst base64Content = $input.item.json.content;\nconst agentsContent = Buffer.from(base64Content, 'base64').toString('utf-8');\n\n// Get metadata from previous node\nconst metadata = $('Parse Request').item.json;\n\nreturn {\n  ...metadata,\n  agentsContent,\n  agentsFileName: $input.item.json.name,\n  agentsUrl: $input.item.json.html_url\n};"
+      },
+      "id": "decode-agents-content",
+      "name": "Decode AGENTS.md Content",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        850,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.item.json;\n\n// Build the prompt for Claude\nconst systemPrompt = `You are an expert software architect helping to plan development tasks.\n\nYou have access to a boilerplate project's AGENTS.md file which contains:\n- Project structure and conventions\n- Best practices and coding standards\n- Common patterns and examples\n- Technology stack information\n\nYour task is to:\n1. Analyze the feature/task description\n2. Use the AGENTS.md context to understand the codebase structure\n3. Generate a detailed implementation plan\n4. Create a customized AGENTS.md snippet for this specific task\n\nProvide your response in the following JSON format:\n{\n  \"plan\": {\n    \"summary\": \"Brief overview of the implementation\",\n    \"steps\": [\n      {\n        \"id\": 1,\n        \"title\": \"Step title\",\n        \"description\": \"Detailed description\",\n        \"files_affected\": [\"path/to/file.ts\"],\n        \"estimated_complexity\": \"low|medium|high\"\n      }\n    ],\n    \"dependencies\": [\"List of new packages needed\"],\n    \"tests_required\": [\"List of tests to implement\"]\n  },\n  \"customized_agents_md\": \"# Task-Specific AGENTS.md\\n\\nContent here...\"\n}`;\n\nconst userPrompt = `Platform: ${data.platform}\nTask Type: ${data.type}\nTitle: ${data.title}\n\nDescription:\n${data.description}\n\n---\n\nHere is the current AGENTS.md file for the ${data.platform} boilerplate:\n\n${data.agentsContent}\n\n---\n\nPlease analyze this request and provide a detailed implementation plan along with a customized AGENTS.md file for this specific task.`;\n\nreturn {\n  systemPrompt,\n  userPrompt,\n  metadata: data\n};"
+      },
+      "id": "build-claude-prompt",
+      "name": "Build Claude Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1050,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "httpHeaderAuth",
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": []
+        },
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-sonnet-4-20250514\",\n  \"max_tokens\": 4096,\n  \"system\": {{ $json.systemPrompt | quote }},\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": {{ $json.userPrompt | quote }}\n    }\n  ]\n}",
+        "options": {}
+      },
+      "id": "call-claude-api",
+      "name": "Call Claude API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract Claude's response\nconst claudeResponse = $input.item.json;\nconst metadata = $('Build Claude Prompt').item.json.metadata;\n\n// Get the text content from Claude\nconst responseText = claudeResponse.content[0].text;\n\n// Try to parse JSON from the response\nlet parsedPlan;\ntry {\n  // Claude might wrap JSON in markdown code blocks\n  const jsonMatch = responseText.match(/```json\\n([\\s\\S]*?)\\n```/) || \n                    responseText.match(/```\\n([\\s\\S]*?)\\n```/) ||\n                    [null, responseText];\n  \n  parsedPlan = JSON.parse(jsonMatch[1]);\n} catch (error) {\n  // If parsing fails, create a simple structure\n  parsedPlan = {\n    plan: {\n      summary: \"Could not parse structured plan\",\n      steps: [{\n        id: 1,\n        title: \"Review Claude's response manually\",\n        description: responseText.substring(0, 500),\n        files_affected: [],\n        estimated_complexity: \"unknown\"\n      }]\n    },\n    customized_agents_md: responseText\n  };\n}\n\nreturn {\n  ...metadata,\n  plan: parsedPlan.plan,\n  customized_agents_md: parsedPlan.customized_agents_md,\n  raw_response: responseText,\n  claude_model: claudeResponse.model,\n  tokens_used: claudeResponse.usage\n};"
+      },
+      "id": "parse-claude-response",
+      "name": "Parse Claude Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1450,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.item.json;\n\n// Format the plan as markdown checklist\nconst checklistItems = data.plan.steps.map((step, index) => {\n  return `- [ ] **${step.title}** (${step.estimated_complexity} complexity)\\n  ${step.description}\\n  Files: ${step.files_affected.join(', ') || 'N/A'}`;\n}).join('\\n\\n');\n\nconst dependencies = data.plan.dependencies && data.plan.dependencies.length > 0\n  ? `\\n\\n## Dependencies\\n${data.plan.dependencies.map(d => `- ${d}`).join('\\n')}`\n  : '';\n\nconst tests = data.plan.tests_required && data.plan.tests_required.length > 0\n  ? `\\n\\n## Tests Required\\n${data.plan.tests_required.map(t => `- ${t}`).join('\\n')}`\n  : '';\n\nconst formattedPlan = `# Implementation Plan: ${data.title}\n\n**Platform:** ${data.platform}\n**Type:** ${data.type}\n\n## Summary\n${data.plan.summary}\n\n## Steps\n${checklistItems}${dependencies}${tests}\n\n---\n\n**Tokens Used:** ${data.tokens_used.input_tokens} input, ${data.tokens_used.output_tokens} output\n**Model:** ${data.claude_model}`;\n\nreturn {\n  platform: data.platform,\n  type: data.type,\n  title: data.title,\n  description: data.description,\n  plan_markdown: formattedPlan,\n  plan_json: data.plan,\n  customized_agents_md: data.customized_agents_md,\n  tokens_used: data.tokens_used,\n  timestamp: new Date().toISOString()\n};"
+      },
+      "id": "format-output",
+      "name": "Format Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1650,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": true,\n  \"platform\": \"{{ $json.platform }}\",\n  \"type\": \"{{ $json.type }}\",\n  \"title\": \"{{ $json.title }}\",\n  \"plan_markdown\": {{ $json.plan_markdown | quote }},\n  \"plan_json\": {{ $json.plan_json | toJsonString }},\n  \"customized_agents_md\": {{ $json.customized_agents_md | quote }},\n  \"tokens_used\": {{ $json.tokens_used | toJsonString }},\n  \"timestamp\": \"{{ $json.timestamp }}\"\n}",
+        "options": {}
+      },
+      "id": "webhook-response",
+      "name": "Webhook Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1850,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "error-condition",
+              "leftValue": "={{ $json.error }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-for-errors",
+      "name": "Check for Errors",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1450,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": false,\n  \"error\": \"{{ $json.error || 'Unknown error occurred' }}\",\n  \"message\": \"{{ $json.message || 'Failed to generate plan' }}\",\n  \"timestamp\": \"{{ new Date().toISOString() }}\"\n}",
+        "options": {
+          "responseCode": 500
+        }
+      },
+      "id": "error-response",
+      "name": "Error Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1650,
+        500
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Parse Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Request": {
+      "main": [
+        [
+          {
+            "node": "Fetch AGENTS.md from GitHub",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch AGENTS.md from GitHub": {
+      "main": [
+        [
+          {
+            "node": "Decode AGENTS.md Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decode AGENTS.md Content": {
+      "main": [
+        [
+          {
+            "node": "Build Claude Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Claude Prompt": {
+      "main": [
+        [
+          {
+            "node": "Call Claude API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call Claude API": {
+      "main": [
+        [
+          {
+            "node": "Parse Claude Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Claude Response": {
+      "main": [
+        [
+          {
+            "node": "Format Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Output": {
+      "main": [
+        [
+          {
+            "node": "Webhook Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 1,
+  "updatedAt": "2025-02-12T00:00:00.000Z",
+  "versionId": "1"
+}
